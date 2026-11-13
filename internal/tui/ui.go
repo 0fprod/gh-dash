@@ -62,6 +62,7 @@ type Model struct {
 	issueSidebar     issueview.Model
 	branchSidebar    branchsidebar.Model
 	worktreeSidebar  worktreesidebar.Model
+
 	notificationView notificationview.Model
 	currSectionId    int
 	footer           footer.Model
@@ -69,7 +70,6 @@ type Model struct {
 	prs              []section.Section
 	issues           []section.Section
 	notifications    []section.Section
-	worktrees        section.Section
 	tabs             tabs.Model
 	ctx              *context.ProgramContext
 	taskSpinner      spinner.Model
@@ -468,11 +468,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 
 			case key.Matches(msg, keys.BranchKeys.ViewPRs):
-				cmds = append(cmds, m.switchSelectedView())
-			}
-		case m.ctx.View == config.WorktreesView:
-			switch {
-			case key.Matches(msg, keys.WorktreeKeys.SwitchView):
 				cmds = append(cmds, m.switchSelectedView())
 			}
 		case m.ctx.View == config.PRsView:
@@ -1205,8 +1200,12 @@ func (m *Model) updateSection(id int, sType string, msg tea.Msg) (cmd tea.Cmd) {
 		m.repo, cmd = m.repo.Update(msg)
 
 	case worktreessection.SectionType:
-		if m.worktrees != nil {
-			m.worktrees, cmd = m.worktrees.Update(msg)
+		for i, s := range m.prs {
+			if s.GetType() == worktreessection.SectionType {
+				updated, c := s.Update(msg)
+				m.prs[i] = updated
+				cmd = c
+			}
 		}
 
 	case notificationssection.SectionType:
@@ -1621,11 +1620,6 @@ func (m *Model) fetchAllViewSections() tea.Cmd {
 		cmds = append(cmds, cmd)
 		m.repo = &s
 		return tea.Batch(cmds...)
-	case config.WorktreesView:
-		s, wcmd := worktreessection.FetchAllWorktrees(m.ctx)
-		cmds = append(cmds, wcmd)
-		m.worktrees = &s
-		return tea.Batch(cmds...)
 	case config.NotificationsView:
 		notifCmd := notificationssection.FetchAllSections(m.ctx, m.notifications)
 		cmds = append(cmds, notifCmd)
@@ -1633,6 +1627,13 @@ func (m *Model) fetchAllViewSections() tea.Cmd {
 	case config.PRsView:
 		prcmds := prssection.FetchAllSections(m.ctx, m.prs)
 		cmds = append(cmds, prcmds)
+		for i, s := range m.prs {
+			if s.GetType() == worktreessection.SectionType {
+				updated, wcmd := s.Update(worktreessection.FetchWorktreesMsg{})
+				m.prs[i] = updated
+				cmds = append(cmds, wcmd)
+			}
+		}
 		return tea.Batch(cmds...)
 	default:
 		issuecmds := issuessection.FetchAllSections(m.ctx, m.issues)
@@ -1648,11 +1649,6 @@ func (m *Model) getCurrentViewSections() []section.Section {
 			return []section.Section{}
 		}
 		return []section.Section{m.repo}
-	case config.WorktreesView:
-		if m.worktrees == nil {
-			return []section.Section{}
-		}
-		return []section.Section{m.worktrees}
 	case config.NotificationsView:
 		if len(m.notifications) == 0 {
 			return []section.Section{}
@@ -1680,7 +1676,7 @@ func (m *Model) switchSelectedView() tea.Cmd {
 	}
 
 	// View cycle: Notifications → PRs → Issues (→ Repo if enabled) →
-	// Worktrees → Notifications
+	// Notifications
 	if repoFF {
 		switch m.ctx.View {
 		case config.NotificationsView:
@@ -1690,8 +1686,6 @@ func (m *Model) switchSelectedView() tea.Cmd {
 		case config.IssuesView:
 			m.ctx.View = config.RepoView
 		case config.RepoView:
-			m.ctx.View = config.WorktreesView
-		case config.WorktreesView:
 			m.ctx.View = config.NotificationsView
 		}
 	} else {
@@ -1700,10 +1694,6 @@ func (m *Model) switchSelectedView() tea.Cmd {
 			m.ctx.View = config.PRsView
 		case config.PRsView:
 			m.ctx.View = config.IssuesView
-		case config.IssuesView:
-			m.ctx.View = config.WorktreesView
-		case config.WorktreesView:
-			m.ctx.View = config.NotificationsView
 		default:
 			m.ctx.View = config.NotificationsView
 		}
@@ -2037,9 +2027,9 @@ func (m *Model) removeSection() {
 
 func (m *Model) initSections() {
 	m.prs = prssection.InitSections(m.ctx)
+	m.prs = append(m.prs, worktreessection.NewSection(m.ctx, len(m.prs)))
 	m.issues = issuessection.InitSections(m.ctx)
 	m.notifications = notificationssection.InitSections(m.ctx)
-	m.worktrees = worktreessection.InitSections(m.ctx)
 }
 
 func (m *Model) isViewSectionsStale() bool {

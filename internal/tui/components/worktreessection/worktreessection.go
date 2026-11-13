@@ -51,11 +51,16 @@ func NewModel(
 	return m
 }
 
-func InitSections(ctx *context.ProgramContext) section.Section {
+// NewSection returns the Worktrees section, embedded as the last tab of
+// the PRs view.
+func NewSection(ctx *context.ProgramContext, id int) section.Section {
 	cfg := config.PrsSectionConfig{Title: "Worktrees"}
-	m := NewModel(0, ctx, cfg, time.Now())
+	m := NewModel(id, ctx, cfg, time.Now())
 	return &m
 }
+
+// FetchWorktreesMsg triggers a re-fetch of the worktrees list.
+type FetchWorktreesMsg struct{}
 
 type worktreesFetchedMsg struct {
 	Worktrees []wt.Worktree
@@ -69,19 +74,7 @@ func (m *Model) fetchWorktreesCmd() tea.Cmd {
 	}
 }
 
-func FetchAllWorktrees(ctx *context.ProgramContext) (Model, tea.Cmd) {
-	cfg := config.PrsSectionConfig{Title: "Worktrees"}
-	m := NewModel(0, ctx, cfg, time.Now())
 
-	cmds := make([]tea.Cmd, 0)
-	loadingCmd := m.SetIsLoading(true)
-	if loadingCmd != nil {
-		cmds = append(cmds, loadingCmd)
-	}
-	cmds = append(cmds, m.fetchWorktreesCmd())
-
-	return m, tea.Batch(cmds...)
-}
 
 func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 	cmds := make([]tea.Cmd, 0)
@@ -106,6 +99,13 @@ func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 
 			break
 		}
+
+	case FetchWorktreesMsg:
+		loadingCmd := m.SetIsLoading(true)
+		if loadingCmd != nil {
+			cmds = append(cmds, loadingCmd)
+		}
+		cmds = append(cmds, m.fetchWorktreesCmd())
 
 	case worktreesFetchedMsg:
 		if msg.Err == nil {
