@@ -68,6 +68,7 @@ type Model struct {
 	fileDiffErr    map[string]error
 	fileDiffByPath string // path whose diff is being fetched
 	fileDiffSetFor map[string]bool
+	expanded       map[string]bool
 }
 
 func NewModel(ctx *context.ProgramContext) Model {
@@ -81,6 +82,7 @@ func NewModel(ctx *context.ProgramContext) Model {
 		fileDiffs:     map[string]string{},
 		fileDiffErr:   map[string]error{},
 		fileDiffSetFor: map[string]bool{},
+		expanded:       map[string]bool{}, 
 	}
 }
 
@@ -109,6 +111,7 @@ func (m *Model) SetRow(row *worktreessection.RowData) tea.Cmd {
 	m.fileDiffs = map[string]string{}
 	m.fileDiffErr = map[string]error{}
 	m.fileDiffSetFor = map[string]bool{}
+	m.expanded = map[string]bool{}
 	m.fileDiffByPath = ""
 
 	branch := row.Data.Branch
@@ -137,36 +140,48 @@ func (m *Model) MoveTabRight() {
 	m.carousel.MoveRight()
 }
 
-// HandleKey processes sidebar navigation keys. Arrow up/down move the file
-// cursor while the Files tab is selected. Returns a command fetching the
-// preview diff of the newly selected file, or nil.
+// HandleKey processes file navigation keys while the Files tab is selected:
+// J/K move the file cursor, Enter toggles the inline preview of the selected
+// file (fetching its diff asynchronously the first time). Arrow up/down and
+// j/k remain reserved for moving between worktree rows. Returns a command
+// fetching the preview diff, or nil.
 func (m *Model) HandleKey(msg tea.KeyMsg) tea.Cmd {
 	if m.row == nil || m.carousel.SelectedItem() != worktreeTabs[0] {
 		return nil
 	}
 
 	switch msg.String() {
-	case "up":
-		if m.fileCursor > 0 {
-			m.fileCursor--
-		}
-	case "down":
+	case "J":
 		if m.fileCursor < len(m.files)-1 {
 			m.fileCursor++
 		}
+		return nil
+	case "K":
+		if m.fileCursor > 0 {
+			m.fileCursor--
+		}
+		return nil
+	case "enter":
+		if len(m.files) == 0 {
+			return nil
+		}
+		file := m.files[m.fileCursor]
+		if m.expanded[file.Path] {
+			delete(m.expanded, file.Path)
+			return nil
+		}
+		m.expanded[file.Path] = true
+		return m.fetchFileDiffCmdFor(file.Path)
 	default:
 		return nil
 	}
-
-	return m.fetchSelectedFileDiffCmd()
 }
 
-func (m *Model) fetchSelectedFileDiffCmd() tea.Cmd {
-	if m.row == nil || len(m.files) == 0 {
+func (m *Model) fetchFileDiffCmdFor(filePath string) tea.Cmd {
+	if m.row == nil {
 		return nil
 	}
-	file := m.files[m.fileCursor]
-	if _, ok := m.fileDiffSetFor[file.Path]; ok {
+	if _, ok := m.fileDiffSetFor[filePath]; ok {
 		return nil
 	}
 
@@ -174,7 +189,6 @@ func (m *Model) fetchSelectedFileDiffCmd() tea.Cmd {
 	base := m.row.BaseBranch
 	path := m.row.Data.Path
 	isMain := m.row.Data.IsMain
-	filePath := file.Path
 	m.fileDiffSetFor[filePath] = true
 	m.fileDiffByPath = filePath
 
@@ -199,7 +213,6 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 			m.files = msg.Files
 			m.filesErr = msg.Err
 			m.fileCursor = 0
-			return m.fetchSelectedFileDiffCmd()
 		}
 
 	case FileDiffFetchedMsg:
@@ -501,32 +514,38 @@ func (m *Model) viewFilesTab(width int) string {
 	for i, file := range m.files {
 		s.WriteString(m.renderFileRow(file, i == m.fileCursor, width))
 		s.WriteString("\n")
+		if m.expanded[file.Path] {
+			s.WriteString(m.renderFilePreview(file, width))
+			s.WriteString("\n")
+		}
 	}
 
-	summary := fmt.Sprintf("%d files", len(m.files))
+	summary := fmt.Sprintf("%d files · J/K file · Enter preview · ctrl+d/u scroll",
+		len(m.files))
 	s.WriteString(lipgloss.NewStyle().Foreground(m.ctx.Theme.FaintText).
 		Render(summary))
-	s.WriteString("\n")
 
-	s.WriteString("\n")
-
-	file := m.files[m.fileCursor]
-	s.WriteString(lipgloss.NewStyle().Bold(true).Render(file.Path))
-	s.WriteString("\n")
-
-	if err, ok := m.fileDiffErr[file.Path]; ok {
-		s.WriteString(lipgloss.NewStyle().Foreground(m.ctx.Theme.ErrorText).
-			Render(fmt.Sprintf("Error: %v", err)))
-		return s.String()
-	}
-
-	if diff, ok := m.fileDiffs[file.Path]; ok {
-		s.WriteString(m.highlight(diff, width))
-		return s.String()
-	}
-
-	s.WriteString("\nLoading preview...")
 	return s.String()
+}
+
+func (m *Model) renderFilePreview(file FileEntry, width int) string {
+	style := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(m.ctx.Theme.FaintBorder).
+		PaddingLeft(2)
+
+	var body string
+	if err, ok := m.fileDiffErr[file.Path]; ok {
+		body = lipgloss.NewStyle().Foreground(m.ctx.Theme.ErrorText).
+			Render(fmt.Sprintf("Error: %v", err))
+	} else if diff, ok := m.fileDiffs[file.Path]; ok {
+		body = m.highlight(diff, width)
+	} else {
+		body = lipgloss.NewStyle().Foreground(m.ctx.Theme.FaintText).
+			Render("Loading preview...")
+	}
+
+	return style.Render(body)
 }
 
 func (m *Model) viewDiffTab(width int) string {
