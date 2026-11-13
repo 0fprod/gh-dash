@@ -438,9 +438,21 @@ func (m *Model) highlight(diff string, width int) string {
 	}
 
 	lexer := lexers.Get("diff")
-	style := styles.Get("github")
+	lightStyle, darkStyle := "github", "github-dark"
+	if cfg := m.ctx.Config; cfg != nil {
+		if cfg.WorktreesDiffStyle != "" {
+			lightStyle = cfg.WorktreesDiffStyle
+		}
+		if cfg.WorktreesDiffStyleDark != "" {
+			darkStyle = cfg.WorktreesDiffStyleDark
+		}
+	}
+	style := styles.Get(lightStyle)
 	if m.ctx.HasDarkBackground {
-		style = styles.Get("github-dark")
+		style = styles.Get(darkStyle)
+	}
+	if style == nil {
+		style = styles.Get("github")
 	}
 	formatter := formatters.Get("terminal256")
 	if lexer == nil || style == nil || formatter == nil {

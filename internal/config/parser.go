@@ -326,6 +326,8 @@ type Config struct {
 	Keybindings              Keybindings                  `yaml:"keybindings"`
 	RepoPaths                map[string]string            `yaml:"repoPaths"`
 	WorktreesRepoPath        string                       `yaml:"worktreesRepoPath,omitempty"`
+	WorktreesDiffStyle       string                       `yaml:"worktreesDiffStyle,omitempty"`  // chroma style for light backgrounds
+	WorktreesDiffStyleDark   string                       `yaml:"worktreesDiffStyleDark,omitempty"` // chroma style for dark backgrounds
 	Theme                    *ThemeConfig                 `yaml:"theme,omitempty"           validate:"omitempty"`
 	Pager                    Pager                        `yaml:"pager"`
 	ConfirmQuit              bool                         `yaml:"confirmQuit"`
