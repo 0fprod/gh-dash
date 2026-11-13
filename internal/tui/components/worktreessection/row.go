@@ -103,23 +103,23 @@ func (r RowData) renderLines(isSelected bool) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, additions, " ", deletions)
 }
 
-func (r RowData) renderCommit(isSelected bool) string {
-	if r.Data.Commit.ShortSha == "" {
-		return r.getBaseStyle(isSelected).Foreground(r.Ctx.Theme.FaintText).Render("-")
+func (r RowData) renderBaseState(isSelected bool) string {
+	style := r.getBaseStyle(isSelected)
+	switch {
+	case r.Data.Ahead > 0 && r.Data.Behind > 0:
+		return style.Foreground(r.Ctx.Styles.Colors.OpenPR).
+			Render(fmt.Sprintf("↑%d↓%d", r.Data.Ahead, r.Data.Behind))
+	case r.Data.Ahead > 0:
+		return style.Foreground(r.Ctx.Theme.SuccessText).
+			Render(fmt.Sprintf("↑%d", r.Data.Ahead))
+	case r.Data.Behind > 0:
+		return style.Foreground(r.Ctx.Theme.ErrorText).
+			Render(fmt.Sprintf("↓%d", r.Data.Behind))
+	case r.Data.IsMain:
+		return style.Foreground(r.Ctx.Theme.FaintText).Render("-")
+	default:
+		return style.Foreground(r.Ctx.Theme.SuccessText).Render("✓")
 	}
-	sha := r.getBaseStyle(isSelected).Foreground(r.Ctx.Theme.FaintText).
-		Render(r.Data.Commit.ShortSha)
-	msg := r.Data.Commit.Message
-	if i := strings.IndexByte(msg, '\n'); i >= 0 {
-		msg = msg[:i]
-	}
-	const maxLen = 60
-	if len(msg) > maxLen {
-		msg = msg[:maxLen-1] + "…"
-	}
-	return r.getBaseStyle(isSelected).
-		Foreground(r.Ctx.Theme.PrimaryText).
-		Render(sha + " " + msg)
 }
 
 func (r RowData) renderPath(isSelected bool) string {
@@ -133,19 +133,21 @@ func (r RowData) renderPath(isSelected bool) string {
 }
 
 func (r RowData) renderUpdatedAt(isSelected bool) string {
-	t := r.GetUpdatedAt()
-	if t.IsZero() {
+	ts := r.Data.Commit.Timestamp
+	if r.Data.LastMod > ts {
+		ts = r.Data.LastMod
+	}
+	if ts <= 0 {
 		return r.getBaseStyle(isSelected).Foreground(r.Ctx.Theme.FaintText).Render("-")
 	}
-	return r.getTextStyle().Render(utils.TimeElapsed(t))
+	return r.getTextStyle().Render(utils.TimeElapsed(time.Unix(ts, 0)))
 }
 
 func (r RowData) ToTableRow(isSelected bool) table.Row {
 	return table.Row{
 		r.renderStatus(isSelected),
 		r.renderBranch(isSelected),
-		r.renderLines(isSelected),
-		r.renderCommit(isSelected),
+		r.renderBaseState(isSelected),
 		r.renderUpdatedAt(isSelected),
 		r.renderPath(isSelected),
 	}
@@ -158,9 +160,8 @@ func GetSectionColumns(
 	return []table.Column{
 		{Title: "", Width: new(int)},
 		{Title: "Branch", Grow: boolPtr(true)},
-		{Title: "Δ", Width: new(int)},
-		{Title: "Commit", Width: intPtr(62)},
+		{Title: "Base", Width: intPtr(8)},
 		{Title: "Updated", Width: intPtr(10)},
-		{Title: "Path", Width: intPtr(50)},
+		{Title: "Path", Width: intPtr(38)},
 	}
 }

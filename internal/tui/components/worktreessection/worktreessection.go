@@ -76,6 +76,9 @@ func (m *Model) fetchWorktreesCmd() tea.Cmd {
 	}
 	return func() tea.Msg {
 		wts, err := wt.FetchWorktrees(repoPath)
+		if err == nil {
+			wt.EnrichWorktrees(repoPath, wts)
+		}
 		return WorktreesFetchedMsg{Worktrees: wts, Err: err}
 	}
 }

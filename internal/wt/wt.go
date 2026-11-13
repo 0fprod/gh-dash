@@ -4,7 +4,10 @@ package wt
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // Commit describes the current commit checked out in a worktree.
@@ -42,6 +45,11 @@ type Worktree struct {
 	IsMain      bool        `json:"is_main"`
 	IsCurrent   bool        `json:"is_current"`
 	Symbols     string      `json:"symbols"`
+
+	// Enriched fields, computed locally from git (not part of wt output).
+	Ahead   int   `json:"-"` // commits on this branch missing from the base branch
+	Behind  int   `json:"-"` // commits on the base branch missing from this branch
+	LastMod int64 `json:"-"` // unix ts of newest modified/untracked file, 0 if clean
 }
 
 // FetchWorktrees returns the worktrees known to Worktrunk for the repo at
@@ -64,4 +72,77 @@ func FetchWorktrees(repoPath string) ([]Worktree, error) {
 		return nil, fmt.Errorf("parsing wt list output: %w", err)
 	}
 	return worktrees, nil
+}
+
+// gitOut runs git in repoPath and returns trimmed stdout; errors are
+// non-fatal (missing branches, permission issues, ...) and return 0.
+func gitOut(repoPath string, args ...string) string {
+	out, err := exec.Command("git", append([]string{"-C", repoPath}, args...)...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// EnrichWorktrees fills Ahead/Behind relative to the base branch (the branch
+// of the is-main worktree) and LastMod (newest mtime among dirty and
+// untracked files) for each worktree. Best effort: enrichment errors are
+// ignored and fields stay at zero values.
+func EnrichWorktrees(repoPath string, worktrees []Worktree) {
+	if repoPath == "" {
+		return
+	}
+	base := ""
+	for i := range worktrees {
+		if worktrees[i].IsMain {
+			base = worktrees[i].Branch
+		}
+	}
+	if base == "" {
+		return
+	}
+	for i := range worktrees {
+		w := &worktrees[i]
+		if w.IsMain || w.Branch == base {
+			continue
+		}
+		if n := gitOut(repoPath, "rev-list", "--count", base+".."+w.Branch); n != "" {
+			fmt.Sscanf(n, "%d", &w.Ahead)
+		}
+		if n := gitOut(repoPath, "rev-list", "--count", w.Branch+".."+base); n != "" {
+			fmt.Sscanf(n, "%d", &w.Behind)
+		}
+		enrichLastMod(w)
+	}
+}
+
+// enrichLastMod stats every dirty/untracked file of the worktree and keeps
+// the newest mtime.
+func enrichLastMod(w *Worktree) {
+	out := gitOut(w.Path, "status", "--porcelain", "-uall")
+	if out == "" {
+		return
+	}
+	var newest int64
+	for _, line := range strings.Split(out, "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		p := line[3:]
+		// Rename lines look like "R  old -> new".
+		if i := strings.LastIndex(p, " -> "); i >= 0 {
+			p = p[i+4:]
+		}
+		p = strings.Trim(p, `"`)
+		info, err := os.Stat(filepath.Join(w.Path, filepath.FromSlash(p)))
+		if err != nil {
+			continue
+		}
+		if m := info.ModTime().Unix(); m > newest {
+			newest = m
+		}
+	}
+	if newest > w.LastMod {
+		w.LastMod = newest
+	}
 }
