@@ -67,6 +67,8 @@ func (a *ViewType) UnmarshalJSON(b []byte) error {
 		*a = IssuesView
 	case "repo":
 		*a = RepoView
+	case "worktrees":
+		*a = WorktreesView
 	}
 
 	return nil
@@ -77,6 +79,7 @@ const (
 	PRsView           ViewType = "prs"
 	IssuesView        ViewType = "issues"
 	RepoView          ViewType = "repo"
+	WorktreesView     ViewType = "worktrees"
 )
 
 type SectionConfig struct {

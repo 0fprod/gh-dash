@@ -42,6 +42,8 @@ import (
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/prssection"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/prview"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/reposection"
+	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/worktreesidebar"
+	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/worktreessection"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/section"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/sidebar"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/tabs"
@@ -59,6 +61,7 @@ type Model struct {
 	prView           prview.Model
 	issueSidebar     issueview.Model
 	branchSidebar    branchsidebar.Model
+	worktreeSidebar  worktreesidebar.Model
 	notificationView notificationview.Model
 	currSectionId    int
 	footer           footer.Model
@@ -66,6 +69,7 @@ type Model struct {
 	prs              []section.Section
 	issues           []section.Section
 	notifications    []section.Section
+	worktrees        section.Section
 	tabs             tabs.Model
 	ctx              *context.ProgramContext
 	taskSpinner      spinner.Model
@@ -163,6 +167,7 @@ func NewModel(location config.Location, repos Repositories) Model {
 	m.prView = prview.NewModel(m.ctx)
 	m.issueSidebar = issueview.NewModel(m.ctx)
 	m.branchSidebar = branchsidebar.NewModel(m.ctx)
+	m.worktreeSidebar = worktreesidebar.NewModel(m.ctx)
 	m.notificationView = notificationview.NewModel(m.ctx)
 	m.tabs = tabs.NewModel(m.ctx)
 
@@ -901,6 +906,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footer.SetRightSection("")
 		delete(m.tasks, msg.TaskId)
 
+	case worktreesidebar.DiffFetchedMsg:
+		var wcmd tea.Cmd
+		m.worktreeSidebar, wcmd = m.worktreeSidebar.Update(msg)
+		if wcmd != nil {
+			cmds = append(cmds, wcmd)
+		}
+		cmds = append(cmds, m.syncSidebar())
+
 	case section.SectionMsg:
 		cmd = m.updateRelevantSection(msg)
 
@@ -1186,6 +1199,11 @@ func (m *Model) updateSection(id int, sType string, msg tea.Msg) (cmd tea.Cmd) {
 	case reposection.SectionType:
 		m.repo, cmd = m.repo.Update(msg)
 
+	case worktreessection.SectionType:
+		if m.worktrees != nil {
+			m.worktrees, cmd = m.worktrees.Update(msg)
+		}
+
 	case notificationssection.SectionType:
 		if id < len(m.notifications) && m.notifications[id] != nil {
 			m.notifications[id], cmd = m.notifications[id].Update(msg)
@@ -1351,6 +1369,10 @@ func (m *Model) syncSidebar() tea.Cmd {
 	case branch.BranchData:
 		cmd = m.branchSidebar.SetRow(&row)
 		m.sidebar.SetContent(m.branchSidebar.View())
+	case *worktreessection.RowData:
+		fetchCmd := m.worktreeSidebar.SetRow(row)
+		m.sidebar.SetContent(m.worktreeSidebar.View())
+		cmd = fetchCmd
 	case *prrow.Data:
 		m.prView.SetSectionId(m.currSectionId)
 		m.prView.SetRow(row)
@@ -1594,6 +1616,11 @@ func (m *Model) fetchAllViewSections() tea.Cmd {
 		cmds = append(cmds, cmd)
 		m.repo = &s
 		return tea.Batch(cmds...)
+	case config.WorktreesView:
+		s, wcmd := worktreessection.FetchAllWorktrees(m.ctx)
+		cmds = append(cmds, wcmd)
+		m.worktrees = &s
+		return tea.Batch(cmds...)
 	case config.NotificationsView:
 		notifCmd := notificationssection.FetchAllSections(m.ctx, m.notifications)
 		cmds = append(cmds, notifCmd)
@@ -1616,6 +1643,11 @@ func (m *Model) getCurrentViewSections() []section.Section {
 			return []section.Section{}
 		}
 		return []section.Section{m.repo}
+	case config.WorktreesView:
+		if m.worktrees == nil {
+			return []section.Section{}
+		}
+		return []section.Section{m.worktrees}
 	case config.NotificationsView:
 		if len(m.notifications) == 0 {
 			return []section.Section{}
@@ -1642,7 +1674,8 @@ func (m *Model) switchSelectedView() tea.Cmd {
 		m.notificationView.ClearSubject()
 	}
 
-	// View cycle: Notifications → PRs → Issues (→ Repo if enabled) → Notifications
+	// View cycle: Notifications → PRs → Issues (→ Repo if enabled) →
+	// Worktrees → Notifications
 	if repoFF {
 		switch m.ctx.View {
 		case config.NotificationsView:
@@ -1652,6 +1685,8 @@ func (m *Model) switchSelectedView() tea.Cmd {
 		case config.IssuesView:
 			m.ctx.View = config.RepoView
 		case config.RepoView:
+			m.ctx.View = config.WorktreesView
+		case config.WorktreesView:
 			m.ctx.View = config.NotificationsView
 		}
 	} else {
@@ -1660,6 +1695,10 @@ func (m *Model) switchSelectedView() tea.Cmd {
 			m.ctx.View = config.PRsView
 		case config.PRsView:
 			m.ctx.View = config.IssuesView
+		case config.IssuesView:
+			m.ctx.View = config.WorktreesView
+		case config.WorktreesView:
+			m.ctx.View = config.NotificationsView
 		default:
 			m.ctx.View = config.NotificationsView
 		}
@@ -1995,6 +2034,7 @@ func (m *Model) initSections() {
 	m.prs = prssection.InitSections(m.ctx)
 	m.issues = issuessection.InitSections(m.ctx)
 	m.notifications = notificationssection.InitSections(m.ctx)
+	m.worktrees = worktreessection.InitSections(m.ctx)
 }
 
 func (m *Model) isViewSectionsStale() bool {
