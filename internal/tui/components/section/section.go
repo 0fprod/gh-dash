@@ -509,6 +509,9 @@ func (m *BaseModel) GetPromptConfirmation() string {
 		case m.PromptConfirmationAction == "update" && m.Ctx.View == config.PRsView:
 			prompt = "Are you sure you want to update this PR? (y/N) "
 
+		case m.PromptConfirmationAction == "rebase" && (m.Ctx.View == config.PRsView || m.Ctx.View == config.RepoView):
+			prompt = "Rebase this PR onto its base branch on GitHub? (y/N) "
+
 		case m.PromptConfirmationAction == "approveWorkflows" && m.Ctx.View == config.PRsView:
 			prompt = "Are you sure you want to approve all workflows? (y/N) "
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime/debug"
 	"slices"
@@ -20,12 +21,14 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/cli/go-gh/v2/pkg/browser"
 	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/gen2brain/beeep"
 	zone "github.com/lrstanley/bubblezone/v2"
 
 	gitm "github.com/aymanbagabas/git-module"
 	"github.com/dlvhdr/gh-dash/v4/internal/config"
 	"github.com/dlvhdr/gh-dash/v4/internal/data"
 	"github.com/dlvhdr/gh-dash/v4/internal/git"
+	"github.com/dlvhdr/gh-dash/v4/internal/pralerts"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/common"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/branch"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/branchsidebar"
@@ -69,6 +72,47 @@ type Model struct {
 	tasks            map[string]context.Task
 	positionOverride string // "" means no override, "right" or "bottom"
 	mode             Mode
+}
+
+type alertsTickMsg struct{}
+
+// prAlertsStatePath returns the state file shared with the former external
+// watcher so already-seen events are not reported again.
+func prAlertsStatePath() string {
+	stateDir := os.Getenv("XDG_STATE_HOME")
+	if stateDir == "" {
+		stateDir = filepath.Join(os.Getenv("HOME"), ".local", "state")
+	}
+	return filepath.Join(stateDir, "pr-dashboard", "state.json")
+}
+
+// pollPRAlerts snapshots the PRs every minute and reports new comments,
+// reviews and CI failures as desktop notifications.
+func pollPRAlerts() tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(time.Minute)
+		if err := reportPRAlerts(); err != nil {
+			log.Error("failed reporting PR alerts", "err", err)
+		}
+		return alertsTickMsg{}
+	}
+}
+
+func reportPRAlerts() error {
+	prs, err := pralerts.Snapshot()
+	if err != nil {
+		return err
+	}
+	messages, err := pralerts.Process(prAlertsStatePath(), prs)
+	if err != nil {
+		return err
+	}
+	for _, message := range messages {
+		if notifyErr := beeep.Notify("gh-dash: GitHub PRs", message, ""); notifyErr != nil {
+			log.Error("failed showing system notification", "err", notifyErr)
+		}
+	}
+	return nil
 }
 
 type Mode int
@@ -480,6 +524,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, cmd
 
+			case key.Matches(msg, keys.PRKeys.Rebase):
+				if currRowData != nil {
+					cmd = m.promptConfirmation(currSection, "rebase")
+				}
+				return m, cmd
+
 			case key.Matches(msg, keys.PRKeys.ApproveWorkflows):
 				if currRowData != nil {
 					cmd = m.promptConfirmation(currSection, "approveWorkflows")
@@ -602,6 +652,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 						case prview.PRActionUpdate:
 							cmd = m.promptConfirmationForNotificationPR("update")
+							return m, cmd
+
+						case prview.PRActionRebase:
+							cmd = m.promptConfirmationForNotificationPR("rebase")
 							return m, cmd
 
 						case prview.PRActionApproveWorkflows:
@@ -727,7 +781,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		cmds = append(cmds, fetchSectionsCmds, m.tabs.Init(), fetchUser,
-			m.doRefreshAtInterval(), m.doUpdateFooterAtInterval())
+			m.doRefreshAtInterval(), m.doUpdateFooterAtInterval(), pollPRAlerts())
+
+	case alertsTickMsg:
+		cmds = append(cmds, pollPRAlerts())
 
 	case intervalRefresh:
 		fetchSectionsCmds := m.fetchAllViewSections()
@@ -1843,6 +1900,10 @@ func (m *Model) executeNotificationAction(action string) tea.Cmd {
 	case "pr_update":
 		if pr != nil {
 			return tasks.UpdatePR(m.ctx, sid, pr)
+		}
+	case "pr_rebase":
+		if pr != nil {
+			return tasks.RebasePR(m.ctx, sid, pr)
 		}
 	case "pr_approveWorkflows":
 		if pr != nil {

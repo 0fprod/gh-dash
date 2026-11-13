@@ -26,6 +26,15 @@ func TestUpdatePR_TaskConfiguration(t *testing.T) {
 	require.Equal(t, "PR #42 has been updated", task.FinishedText)
 }
 
+func TestRebasePR_UsesGitHubRebaseFlag(t *testing.T) {
+	task := rebasePRTask(SectionIdentifier{Id: 2, Type: "pr"}, mockIssue{number: 42, repoName: "owner/repo"})
+
+	require.Equal(t, "pr_rebase_42", task.Id)
+	require.Contains(t, task.Args, "--rebase",
+		"rebase task must ask GitHub to rebase, not merge")
+	require.Equal(t, "Rebasing PR #42", task.StartText)
+}
+
 func TestUpdatePR_MsgDoesNotMarkPRClosed(t *testing.T) {
 	task := updatePRTask(SectionIdentifier{Id: 2, Type: "pr"}, mockIssue{
 		number:   42,

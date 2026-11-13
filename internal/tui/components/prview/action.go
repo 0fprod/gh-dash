@@ -24,6 +24,7 @@ const (
 	PRActionReopen
 	PRActionMerge
 	PRActionUpdate
+	PRActionRebase
 	PRActionSummaryViewMore
 	PRActionApproveWorkflows
 )
@@ -65,6 +66,8 @@ func MsgToAction(msg tea.Msg) *PRAction {
 		return &PRAction{Type: PRActionMerge}
 	case key.Matches(keyMsg, keys.PRKeys.Update):
 		return &PRAction{Type: PRActionUpdate}
+	case key.Matches(keyMsg, keys.PRKeys.Rebase):
+		return &PRAction{Type: PRActionRebase}
 	case key.Matches(keyMsg, keys.PRKeys.SummaryViewMore):
 		return &PRAction{Type: PRActionSummaryViewMore}
 	case key.Matches(keyMsg, keys.PRKeys.ApproveWorkflows):

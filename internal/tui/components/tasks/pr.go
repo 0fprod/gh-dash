@@ -266,6 +266,22 @@ func UpdatePR(ctx *context.ProgramContext, section SectionIdentifier, pr data.Ro
 	return fireTask(ctx, updatePRTask(section, pr))
 }
 
+// rebasePRTask builds the task that asks GitHub to rebase the PR branch
+// onto its base branch instead of merging it.
+func rebasePRTask(section SectionIdentifier, pr data.RowData) GitHubTask {
+	task := updatePRTask(section, pr)
+	task.Id = buildTaskId("pr_rebase", pr.GetNumber())
+	task.Args = append(task.Args, "--rebase")
+	task.StartText = fmt.Sprintf("Rebasing PR #%d", pr.GetNumber())
+	task.FinishedText = fmt.Sprintf("PR #%d has been rebased", pr.GetNumber())
+	return task
+}
+
+// RebasePR requests GitHub to rebase the PR branch onto its base branch.
+func RebasePR(ctx *context.ProgramContext, section SectionIdentifier, pr data.RowData) tea.Cmd {
+	return fireTask(ctx, rebasePRTask(section, pr))
+}
+
 func AssignPR(
 	ctx *context.ProgramContext,
 	section SectionIdentifier,
