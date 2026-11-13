@@ -312,7 +312,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case m.getCurrSection() != nil &&
 			m.getCurrSection().GetType() == worktreessection.SectionType &&
-			(msg.String() == "up" || msg.String() == "down"):
+			(msg.String() == "J" || msg.String() == "K" || msg.String() == "enter"):
 			if wcmd := m.worktreeSidebar.HandleKey(msg); wcmd != nil {
 				cmds = append(cmds, wcmd)
 			}
@@ -935,8 +935,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case section.SectionMsg:
 		cmd = m.updateRelevantSection(msg)
 
-		if msg.Id == m.currSectionId {
-			cmds = append(cmds, m.onViewedRowChanged())
+	case worktreessection.WorktreesFetchedMsg:
+		for i, s := range m.prs {
+			if s.GetType() != worktreessection.SectionType {
+				continue
+			}
+			updated, wcmd := m.prs[i].Update(msg)
+			m.prs[i] = updated
+			cmds = append(cmds, wcmd)
+			if i == m.currSectionId {
+				cmds = append(cmds, m.onViewedRowChanged())
+			}
+			break
 		}
 
 	case execProcessFinishedMsg, tea.FocusMsg:

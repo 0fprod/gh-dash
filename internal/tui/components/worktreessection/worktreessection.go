@@ -64,7 +64,7 @@ func NewSection(ctx *context.ProgramContext, id int) section.Section {
 // FetchWorktreesMsg triggers a re-fetch of the worktrees list.
 type FetchWorktreesMsg struct{}
 
-type worktreesFetchedMsg struct {
+type WorktreesFetchedMsg struct {
 	Worktrees []wt.Worktree
 	Err       error
 }
@@ -76,7 +76,7 @@ func (m *Model) fetchWorktreesCmd() tea.Cmd {
 	}
 	return func() tea.Msg {
 		wts, err := wt.FetchWorktrees(repoPath)
-		return worktreesFetchedMsg{Worktrees: wts, Err: err}
+		return WorktreesFetchedMsg{Worktrees: wts, Err: err}
 	}
 }
 
@@ -113,7 +113,7 @@ func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 		}
 		cmds = append(cmds, m.fetchWorktreesCmd())
 
-	case worktreesFetchedMsg:
+	case WorktreesFetchedMsg:
 		m.FetchErr = msg.Err
 		if msg.Err == nil {
 			m.Worktrees = msg.Worktrees
