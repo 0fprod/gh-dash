@@ -22,6 +22,7 @@ type Model struct {
 	section.BaseModel
 	Worktrees  []wt.Worktree
 	BaseBranch string
+	FetchErr   error
 }
 
 func NewModel(
@@ -46,6 +47,7 @@ func NewModel(
 	m.SearchBar = search.NewModel(ctx, search.SearchOptions{Placeholder: "Search worktrees..."})
 	m.SearchValue = ""
 	m.Worktrees = []wt.Worktree{}
+	m.FetchErr = nil
 	m.BaseBranch = "main"
 
 	return m
@@ -68,8 +70,12 @@ type worktreesFetchedMsg struct {
 }
 
 func (m *Model) fetchWorktreesCmd() tea.Cmd {
+	repoPath := m.Ctx.Config.WorktreesRepoPath
+	if repoPath == "" {
+		repoPath = m.Ctx.RepoPath
+	}
 	return func() tea.Msg {
-		wts, err := wt.FetchWorktrees(m.Ctx.RepoPath)
+		wts, err := wt.FetchWorktrees(repoPath)
 		return worktreesFetchedMsg{Worktrees: wts, Err: err}
 	}
 }
@@ -108,6 +114,7 @@ func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 		cmds = append(cmds, m.fetchWorktreesCmd())
 
 	case worktreesFetchedMsg:
+		m.FetchErr = msg.Err
 		if msg.Err == nil {
 			m.Worktrees = msg.Worktrees
 			for _, w := range msg.Worktrees {
@@ -136,14 +143,20 @@ func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	if m.Table.Rows == nil {
+	if m.Table.Rows == nil || len(m.Worktrees) == 0 {
 		d := m.GetDimensions()
+		msg := "No worktrees found"
+		if m.FetchErr != nil {
+			msg = m.FetchErr.Error()
+		} else if m.GetIsLoading() {
+			msg = "Loading worktrees…"
+		}
 		return lipgloss.Place(
 			d.Width,
 			d.Height,
 			lipgloss.Center,
 			lipgloss.Center,
-			"No worktrees found",
+			msg,
 		)
 	}
 
