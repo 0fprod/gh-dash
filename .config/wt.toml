@@ -1,0 +1,4 @@
+# Rebuild the gh-dash binary after each merge so
+# ~/.local/share/pr-dashboard/start always runs the latest code.
+[post-merge]
+build = "go build -o gh-dash ."
