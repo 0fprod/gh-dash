@@ -5,7 +5,9 @@ package worktreesidebar
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -292,6 +294,17 @@ func fetchFileDiff(path, base string, isMain bool, filePath string) (string, err
 	if strings.TrimSpace(working) != "" {
 		s.WriteString(strings.TrimRight(working, "\n"))
 		s.WriteString("\n")
+	} else if strings.TrimSpace(s.String()) == "" {
+		// Neither the committed range nor the working tree produced a diff:
+		// the file is likely untracked. Show its full content as an addition.
+		if _, lsErr := runGit(path, "ls-files", "--error-unmatch", "--", filePath); lsErr != nil {
+			cmd := exec.Command("git", "-C", path, "diff", "--no-index", "--no-color", "/dev/null", filePath)
+			out, _ := cmd.Output()
+			if len(out) > 0 {
+				s.WriteString(strings.TrimRight(string(out), "\n"))
+				s.WriteString("\n")
+			}
+		}
 	}
 
 	if s.Len() == 0 {
@@ -371,6 +384,30 @@ func fetchFiles(path, base string, isMain bool) ([]FileEntry, error) {
 			entry.Added += parseNum(parts[0])
 			entry.Deleted += parseNum(parts[1])
 		}
+	}
+
+	// Untracked files are invisible to git diff; list them explicitly with
+	// status "?" and their line count as additions.
+	untracked, err := runGit(path, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("ls-files --others: %w", err)
+	}
+	for _, line := range strings.Split(strings.TrimRight(untracked, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if _, ok := byPath[line]; ok {
+			continue
+		}
+		entry := &FileEntry{Path: line, Status: "?"}
+		if content, readErr := os.ReadFile(filepath.Join(path, line)); readErr == nil {
+			entry.Added = bytes.Count(content, []byte{'\n'})
+			if len(content) > 0 && content[len(content)-1] != '\n' {
+				entry.Added++
+			}
+		}
+		byPath[line] = entry
+		order = append(order, line)
 	}
 
 	files := make([]FileEntry, 0, len(order))
