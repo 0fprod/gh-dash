@@ -310,6 +310,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.SectionMode):
 			m.mode = ModeSection
 
+		case m.getCurrSection() != nil &&
+			m.getCurrSection().GetType() == worktreessection.SectionType &&
+			(msg.String() == "up" || msg.String() == "down"):
+			if wcmd := m.worktreeSidebar.HandleKey(msg); wcmd != nil {
+				cmds = append(cmds, wcmd)
+			}
+			m.syncSidebar()
+
 		case key.Matches(msg, m.keys.PrevSection):
 			prevSection := m.getSectionAt(m.getPrevSectionId())
 			if prevSection != nil {
@@ -472,6 +480,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case m.ctx.View == config.PRsView:
 			switch {
+			case currSection != nil && currSection.GetType() == worktreessection.SectionType &&
+				(key.Matches(msg, keys.PRKeys.PrevSidebarTab) ||
+					key.Matches(msg, keys.PRKeys.NextSidebarTab)):
+				if key.Matches(msg, keys.PRKeys.PrevSidebarTab) {
+					m.worktreeSidebar.MoveTabLeft()
+				} else {
+					m.worktreeSidebar.MoveTabRight()
+				}
+				m.syncSidebar()
+				return m, nil
+
 			case key.Matches(msg, keys.PRKeys.PrevSidebarTab),
 				key.Matches(msg, keys.PRKeys.NextSidebarTab):
 				var scmds []tea.Cmd
@@ -906,10 +925,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footer.SetRightSection("")
 		delete(m.tasks, msg.TaskId)
 
-	case worktreesidebar.DiffFetchedMsg:
-		var wcmd tea.Cmd
-		m.worktreeSidebar, wcmd = m.worktreeSidebar.Update(msg)
-		if wcmd != nil {
+	case worktreesidebar.DiffFetchedMsg, worktreesidebar.FilesFetchedMsg,
+		worktreesidebar.FileDiffFetchedMsg:
+		if wcmd := m.worktreeSidebar.Update(msg); wcmd != nil {
 			cmds = append(cmds, wcmd)
 		}
 		cmds = append(cmds, m.syncSidebar())
