@@ -470,6 +470,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.BranchKeys.ViewPRs):
 				cmds = append(cmds, m.switchSelectedView())
 			}
+		case m.ctx.View == config.WorktreesView:
+			switch {
+			case key.Matches(msg, keys.WorktreeKeys.SwitchView):
+				cmds = append(cmds, m.switchSelectedView())
+			}
 		case m.ctx.View == config.PRsView:
 			switch {
 			case key.Matches(msg, keys.PRKeys.PrevSidebarTab),
