@@ -1,6 +1,8 @@
 package worktreessection
 
 import (
+	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dlvhdr/gh-dash/v4/internal/config"
+	"github.com/dlvhdr/gh-dash/v4/internal/tui/constants"
 	"github.com/dlvhdr/gh-dash/v4/internal/data"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/search"
 	"github.com/dlvhdr/gh-dash/v4/internal/tui/components/section"
@@ -61,6 +64,25 @@ func NewSection(ctx *context.ProgramContext, id int) section.Section {
 	return &m
 }
 
+// removeWorktreeCmd runs `wt remove <branch>` for the worktree, then
+// triggers a re-fetch of the section. The TUI is suspended while wt runs so
+// its output is visible.
+func (m *Model) removeWorktreeCmd(branch string) tea.Cmd {
+	repoPath := m.Ctx.Config.WorktreesRepoPath
+	if repoPath == "" {
+		repoPath = m.Ctx.RepoPath
+	}
+	return tea.ExecProcess(
+		exec.Command("wt", "-C", repoPath, "remove", branch),
+		func(err error) tea.Msg {
+			if err != nil {
+				return constants.ErrMsg{Err: fmt.Errorf("removing worktree %s: %w", branch, err)}
+			}
+			return section.SectionMsg{Id: m.Id, Type: SectionType, InternalMsg: FetchWorktreesMsg{}}
+		},
+	)
+}
+
 // FetchWorktreesMsg triggers a re-fetch of the worktrees list.
 type FetchWorktreesMsg struct{}
 
@@ -87,9 +109,35 @@ func (m *Model) fetchWorktreesCmd() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 	cmds := make([]tea.Cmd, 0)
+	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+
+		if m.IsPromptConfirmationFocused() {
+			switch msg.String() {
+			case "ctrl+c", "esc":
+				m.PromptConfirmationBox.Reset()
+				cmd = m.SetIsPromptConfirmationShown(false)
+				return m, cmd
+
+			case "enter":
+				input := m.PromptConfirmationBox.Value()
+				action := m.GetPromptConfirmationAction()
+				if input == "y" || input == "Y" {
+					if action == "remove" {
+						if row := m.GetCurrRowData(); row != nil && !row.Data.IsMain {
+							cmd = m.removeWorktreeCmd(row.Data.Branch)
+						}
+					}
+				}
+				m.PromptConfirmationBox.Reset()
+				blinkCmd := m.SetIsPromptConfirmationShown(false)
+				return m, tea.Batch(cmd, blinkCmd)
+			}
+
+			break
+		}
 
 		if m.IsSearchFocused() {
 			switch msg.String() {
@@ -136,6 +184,10 @@ func (m *Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 	search, searchCmd := m.SearchBar.Update(msg)
 	cmds = append(cmds, searchCmd)
 	m.SearchBar = search
+
+	prompt, promptCmd := m.PromptConfirmationBox.Update(msg)
+	cmds = append(cmds, promptCmd)
+	m.PromptConfirmationBox = prompt
 
 	m.Table.SetRows(m.BuildRows())
 	table, tableCmd := m.Table.Update(msg)

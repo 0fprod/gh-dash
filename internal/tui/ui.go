@@ -333,6 +333,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}))
 			}
 
+		case m.getCurrSection() != nil &&
+			m.getCurrSection().GetType() == worktreessection.SectionType &&
+			msg.String() == "x":
+			if row, ok := m.getCurrRowData().(*worktreessection.RowData); ok && !row.Data.IsMain {
+				cmd = m.promptConfirmation(m.getCurrSection(), "remove")
+				return m, cmd
+			}
+
 		case key.Matches(msg, m.keys.PrevSection):
 			prevSection := m.getSectionAt(m.getPrevSectionId())
 			if prevSection != nil {

@@ -132,6 +132,17 @@ func (r RowData) renderPath(isSelected bool) string {
 		Render(filepath.ToSlash(p))
 }
 
+func (r RowData) renderMerged(isSelected bool) string {
+	style := r.getBaseStyle(isSelected)
+	if r.Data.IsMain {
+		return style.Foreground(r.Ctx.Theme.FaintText).Render("-")
+	}
+	if r.Data.Ahead == 0 {
+		return style.Foreground(r.Ctx.Theme.SuccessText).Render("✓")
+	}
+	return style.Foreground(r.Ctx.Theme.ErrorText).Render("✗")
+}
+
 func (r RowData) renderUpdatedAt(isSelected bool) string {
 	ts := r.Data.Commit.Timestamp
 	if r.Data.LastMod > ts {
@@ -148,6 +159,7 @@ func (r RowData) ToTableRow(isSelected bool) table.Row {
 		r.renderStatus(isSelected),
 		r.renderBranch(isSelected),
 		r.renderBaseState(isSelected),
+		r.renderMerged(isSelected),
 		r.renderUpdatedAt(isSelected),
 		r.renderPath(isSelected),
 	}
@@ -161,6 +173,7 @@ func GetSectionColumns(
 		{Title: "", Width: new(int)},
 		{Title: "Branch", Grow: boolPtr(true)},
 		{Title: "Base", Width: intPtr(8)},
+		{Title: "Merged", Width: intPtr(7)},
 		{Title: "Updated", Width: intPtr(10)},
 		{Title: "Path", Width: intPtr(38)},
 	}

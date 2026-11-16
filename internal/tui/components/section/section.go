@@ -494,6 +494,9 @@ func (m *BaseModel) GetPromptConfirmation() string {
 	if m.IsPromptConfirmationShown {
 		var prompt string
 		switch {
+		case m.PromptConfirmationAction == "remove" && m.Ctx.View == config.PRsView:
+			prompt = "Remove this worktree and its branch? (y/N) "
+
 		case m.PromptConfirmationAction == "close" && m.Ctx.View == config.PRsView:
 			prompt = "Are you sure you want to close this PR? (y/N) "
 
