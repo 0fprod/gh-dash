@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"io"
 	"os"
 	"path/filepath"
@@ -317,6 +318,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, wcmd)
 			}
 			m.syncSidebar()
+
+		case m.getCurrSection() != nil &&
+			m.getCurrSection().GetType() == worktreessection.SectionType &&
+			msg.String() == "v":
+			if row, ok := m.getCurrRowData().(*worktreessection.RowData); ok {
+				cmds = append(cmds, tea.ExecProcess(
+					exec.Command("code", row.Data.Path),
+					func(err error) tea.Msg {
+						if err != nil {
+							return constants.ErrMsg{Err: fmt.Errorf("opening worktree in VS Code: %w", err)}
+						}
+						return nil
+					}))
+			}
 
 		case key.Matches(msg, m.keys.PrevSection):
 			prevSection := m.getSectionAt(m.getPrevSectionId())
