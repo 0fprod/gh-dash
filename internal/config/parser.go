@@ -80,18 +80,24 @@ const (
 )
 
 type SectionConfig struct {
-	Title   string
-	Filters string
-	Limit   *int      `yaml:"limit,omitempty"`
-	Type    *ViewType `yaml:"type,omitempty"`
+	Title        string
+	Filters      string
+	MergeFilters []string  `yaml:"mergeFilters,omitempty"`
+	Limit        *int      `yaml:"limit,omitempty"`
+	Type         *ViewType `yaml:"type,omitempty"`
 }
 
 type PrsSectionConfig struct {
 	Title   string
 	Filters string
-	Limit   *int            `yaml:"limit,omitempty"`
-	Layout  PrsLayoutConfig `yaml:"layout,omitempty"`
-	Type    *ViewType       `yaml:"type,omitempty"`
+	// MergeFilters runs each query separately and unions the results
+	// client-side (deduped by PR number, sorted by updated desc). GitHub
+	// search does not support OR between qualifiers, so this is the way to
+	// combine author/review/team queries in a single section.
+	MergeFilters []string        `yaml:"mergeFilters,omitempty"`
+	Limit        *int            `yaml:"limit,omitempty"`
+	Layout       PrsLayoutConfig `yaml:"layout,omitempty"`
+	Type         *ViewType       `yaml:"type,omitempty"`
 }
 
 type IssuesSectionConfig struct {
