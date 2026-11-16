@@ -3,6 +3,7 @@ package prssection
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -487,6 +488,10 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 			limit = &m.Ctx.Config.Defaults.PrsLimit
 		}
 
+		if len(m.Config.MergeFilters) > 0 {
+			return m.fetchMergedPullRequests(taskId, *limit)
+		}
+
 		res, err := data.FetchPullRequests(m.GetFilters(), *limit, m.PageInfo)
 		if err != nil {
 			return constants.TaskFinishedMsg{
@@ -518,6 +523,58 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 	cmds = append(cmds, m.SetIsLoading(true))
 
 	return cmds
+}
+
+// fetchMergedPullRequests runs each MergeFilters query independently (first
+// page only) and unions the results: deduped by PR number, sorted by
+// updated-desc. Pagination is disabled for merged sections; the limit applies
+// per query.
+func (m *Model) fetchMergedPullRequests(taskId string, limit int) constants.TaskFinishedMsg {
+	type entry struct {
+		pr data.PullRequestData
+	}
+	seen := map[int]bool{}
+	union := make([]entry, 0)
+
+	for _, filter := range m.Config.MergeFilters {
+		res, err := data.FetchPullRequests(filter, limit, nil)
+		if err != nil {
+			return constants.TaskFinishedMsg{
+				SectionId:   m.Id,
+				SectionType: m.Type,
+				TaskId:      taskId,
+				Err:         err,
+			}
+		}
+		for _, pr := range res.Prs {
+			if seen[pr.Number] {
+				continue
+			}
+			seen[pr.Number] = true
+			union = append(union, entry{pr: pr})
+		}
+	}
+
+	sort.SliceStable(union, func(i, j int) bool {
+		return union[i].pr.UpdatedAt.After(union[j].pr.UpdatedAt)
+	})
+
+	prs := make([]prrow.Data, 0, len(union))
+	for _, u := range union {
+		pr := u.pr
+		prs = append(prs, prrow.Data{Primary: &pr})
+	}
+	return constants.TaskFinishedMsg{
+		SectionId:   m.Id,
+		SectionType: m.Type,
+		TaskId:      taskId,
+		Msg: SectionPullRequestsFetchedMsg{
+			Prs:        prs,
+			TotalCount: len(prs),
+			PageInfo:   data.PageInfo{HasNextPage: false},
+			TaskId:     taskId,
+		},
+	}
 }
 
 func (m *Model) ResetRows() {
